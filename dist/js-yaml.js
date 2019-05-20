@@ -1455,6 +1455,16 @@ function readPlainScalar(state, nodeIndent, withinFlowCollection) {
   hasPendingContent = false;
 
   while (ch !== 0) {
+    if (is_WHITE_SPACE(ch)) {
+      var eol = state.position;
+      while (!is_EOL(state.input.charCodeAt(eol)))
+        eol += 1;
+
+      if (state.input.charCodeAt(eol - 1) !== 0x3A/* : */) {
+        following = state.input.charCodeAt(state.position + 1);
+        break;
+      }
+    }
     if (ch === 0x3A/* : */) {
       following = state.input.charCodeAt(state.position + 1);
 
@@ -1586,6 +1596,20 @@ function readDoubleQuotedScalar(state, nodeIndent) {
     if (ch === 0x22/* " */) {
       captureSegment(state, captureStart, state.position, true);
       state.position++;
+
+      if (state.input.charCodeAt(state.position) === 0x2c/* , */) {
+        state.position++;
+
+        skipSeparationSpace(state, true, -1);
+
+        var _result = state.result;
+
+        if (readDoubleQuotedScalar(state, nodeIndent) || readSingleQuotedScalar(state, nodeIndent) || readPlainScalar(state, nodeIndent, false)) {
+          state.kind = 'scalar';
+          state.result = _result + ', ' + state.result;
+        }
+      }
+
       return true;
 
     } else if (ch === 0x5C/* \ */) {
@@ -1716,7 +1740,7 @@ function readFlowCollection(state, nodeIndent) {
 
     ch = state.input.charCodeAt(state.position);
 
-    if ((isExplicitPair || state.line === _line) && ch === 0x3A/* : */) {
+    if ((isExplicitPair || state.line === _line) && ch === 0x3A/* : */ || is_WHITE_SPACE(ch)) {
       isPair = true;
       ch = state.input.charCodeAt(++state.position);
       skipSeparationSpace(state, true, nodeIndent);
@@ -2015,15 +2039,18 @@ function readBlockMapping(state, nodeIndent, flowIndent) {
       if (state.line === _line) {
         ch = state.input.charCodeAt(state.position);
 
+        var initial = state.position;
         while (is_WHITE_SPACE(ch)) {
           ch = state.input.charCodeAt(++state.position);
         }
 
-        if (ch === 0x3A/* : */) {
-          ch = state.input.charCodeAt(++state.position);
+        if (ch === 0x3A/* : */ || (!atExplicitKey && state.position > initial)) {
+          if (ch === 0x3A/* : */) {
+            ch = state.input.charCodeAt(++state.position);
 
-          if (!is_WS_OR_EOL(ch)) {
-            throwError(state, 'a whitespace character is expected after the key-value separator within a block mapping');
+            if (!is_WS_OR_EOL(ch)) {
+              throwError(state, 'a whitespace character is expected after the key-value separator within a block mapping');
+            }
           }
 
           if (atExplicitKey) {
@@ -2409,6 +2436,7 @@ function composeNode(state, parentIndent, nodeContext, allowToSeek, allowCompact
   if (state.listener !== null) {
     state.listener('close', state);
   }
+
   return state.tag !== null ||  state.anchor !== null || hasContent;
 }
 
